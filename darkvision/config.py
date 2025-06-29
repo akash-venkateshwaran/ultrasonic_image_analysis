@@ -22,8 +22,11 @@ REPORTS_DIR = PROJ_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 
 
-DRIVE_LINK = "https://drive.google.com/file/d/1YGLw_FE_N1r1WLzAEm8rF-2v3PCHRPvY/view?usp=sharing"
 FILE_ID = '1YGLw_FE_N1r1WLzAEm8rF-2v3PCHRPvY'
+DEFAULT_FILENAME = "2D555BB4-0C14-4BEB-9051-24C5C65471F1"
+
+# Set a global random state for reproducibility
+RANDOM_STATE = 42
 
 # If tqdm is installed, configure loguru with tqdm.write
 # https://github.com/Delgan/loguru/issues/135

@@ -1,10 +1,56 @@
 # ultrasonic_image_analysis
 
-<a target="_blank" href="https://cookiecutter-data-science.drivendata.org/">
-    <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
-</a>
+![Animation](reports/figures/animation.gif)
+![Prediction Plot](reports/figures/predictions_plot.png)
 
-Developed streamlined workflows for image analysis, raw ultrasonic data processing, and predictive model creation.
+A project for automated flaw detection and regression using ultrasonic non-destructive testing (NDT) data. This repository provides workflows for image analysis, raw ultrasonic data processing, and predictive model creation using deep learning.
+
+## WHAT
+- End-to-end pipeline for flaw detection and flaw size regression from ultrasonic images
+- Data preprocessing, splitting, and augmentation utilities
+- Custom PyTorch Dataset and DataLoader for 3D ultrasonic data
+- Simple CNN model for flaw size regression
+- CLI tools for data download, processing, training, and prediction
+- Visualization tools for inspection and model evaluation
+
+## INSTRUCTION
+1. **Download and extract the data:**
+   ```sh
+   python -m darkvision.dataset download-and-extract
+   ```
+2. **Split raw data into train/test sets:**
+   ```sh
+   python -m darkvision.dataset split-raw-to-train-test --test-size 0.2 --max-samples 1000 --seed 42
+   ```
+3. **Test the DataLoader:**
+   ```sh
+   python -m darkvision.dataset test-dataloader --folder data/processed/train --batch-size 8
+   ```
+4. **Train the CNN model:**
+   ```sh
+   python -m darkvision.modeling.train train --batch-size 16 --epochs 10 --lr 0.001 --device cuda
+   ```
+5. **Plot predictions vs ground truth:**
+   ```sh
+   python -m darkvision.plots plot-predictions --test-dir data/processed/test --model-path models/checkpoint_epoch_100.pt --n-samples 20
+   ```
+6. **Inspect and animate slices:**
+   ```sh
+   python -m darkvision.plots inspect --filename <UUID> --slice-idx 4
+   python -m darkvision.plots animate --filename <UUID> --output-path reports/figures/animation.gif
+   ```
+
+## DATA
+Please refer to https://arxiv.org/abs/1903.11399 for details.
+
+**Contents:**
+- The directory `data` contains ultrasonic data sets, containing various flaws. Each batch file is named with a UUID and contains:
+  - `.bins` file: raw data (UInt16, 256 x 256 x 100)
+  - `.meta` file: documents the raw data format
+  - `.jsons` file: json-formatted meta-data for each binary file (flaw locations, source flaw size, equivalent size)
+  - `.labels` file: tab-separated data for flaw existence (0/1) and equivalent flaw size
+- The directory `src` contains python code to train a deep CNN using the data provided. Use `./train.py` to run.
+- For inference, consult the sample code in `src/inference.py`.
 
 ## Project Organization
 
@@ -56,6 +102,4 @@ Developed streamlined workflows for image analysis, raw ultrasonic data processi
     │
     └── plots.py                <- Code to create visualizations
 ```
-
---------
 

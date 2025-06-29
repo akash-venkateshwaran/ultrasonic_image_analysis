@@ -8,8 +8,11 @@ import numpy as np
 import json
 import gdown
 import py7zr
+import random
+import torch
+from torch.utils.data import Dataset, DataLoader
 
-from darkvision.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, FILE_ID
+from darkvision.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, FILE_ID, RANDOM_STATE
 
 app = typer.Typer()
 
@@ -311,6 +314,88 @@ def main(
         if i == 5:
             logger.info("Something happened for iteration 5.")
     logger.success("Processing dataset complete.")
+
+@app.command()
+def split_raw_to_train_test(
+    test_size: float = 0.2,
+    max_samples: int = 1000,
+    seed: int = RANDOM_STATE
+) -> None:
+    """
+    Split raw data into train and test sets. Each bin file has 100 slices, each slice is a sample.
+    Export X_i (image) and y_i (flaw size) as .npy files in data/processed/train and data/processed/test.
+    """
+    np.random.seed(seed)
+    random.seed(seed)
+    raw_dir = RAW_DATA_DIR
+    processed_dir = PROCESSED_DATA_DIR
+    train_dir = processed_dir / 'train'
+    test_dir = processed_dir / 'test'
+    train_dir.mkdir(parents=True, exist_ok=True)
+    test_dir.mkdir(parents=True, exist_ok=True)
+
+    # Gather all .bins files
+    bin_files = list(raw_dir.glob('*.bins'))
+    all_samples = []
+    for bin_file in bin_files:
+        base = bin_file.stem.replace('.bins', '')
+        proc = DataProcessorRaw(base, data_dir=raw_dir)
+        arr = proc.load_bin()
+        data_dict = proc.load_all_data()
+        for i in range(arr.shape[0]):
+            all_samples.append((arr[i], data_dict[i]['equivalent_flawsize']))
+            if len(all_samples) >= max_samples:
+                break
+        if len(all_samples) >= max_samples:
+            break
+    indices = np.arange(len(all_samples))
+    np.random.shuffle(indices)
+    split = int(len(indices) * (1 - test_size))
+    train_idx, test_idx = indices[:split], indices[split:]
+    # Save train
+    for idx, i in enumerate(train_idx):
+        np.save(train_dir / f'X_{idx}.npy', all_samples[i][0])
+        np.save(train_dir / f'y_{idx}.npy', np.array([all_samples[i][1]]))
+    # Save test
+    for idx, i in enumerate(test_idx):
+        np.save(test_dir / f'X_{idx}.npy', all_samples[i][0])
+        np.save(test_dir / f'y_{idx}.npy', np.array([all_samples[i][1]]))
+    logger.success(f"Exported {len(train_idx)} train and {len(test_idx)} test samples to {processed_dir}")
+
+class FlawDataset(Dataset):
+    """
+    Custom torch Dataset for flaw size regression.
+    """
+    def __init__(self, folder: Path):
+        self.folder = Path(folder)
+        self.X_files = sorted([f for f in self.folder.glob('X_*.npy')])
+        self.y_files = sorted([f for f in self.folder.glob('y_*.npy')])
+        assert len(self.X_files) == len(self.y_files)
+    def __len__(self):
+        return len(self.X_files)
+    def __getitem__(self, idx):
+        X = np.load(self.X_files[idx]).astype(np.float32) / 65535.0  # normalize
+        X = np.expand_dims(X, 0)  # (1, 256, 256)
+        y = np.load(self.y_files[idx]).astype(np.float32)
+        return torch.from_numpy(X), torch.from_numpy(y)
+
+# Example CLI for DataLoader usage
+def get_dataloader(folder: Path, batch_size: int = 16, shuffle: bool = True):
+    ds = FlawDataset(folder)
+    return DataLoader(ds, batch_size=batch_size, shuffle=shuffle, num_workers=0)
+
+@app.command()
+def test_dataloader(
+    folder: Path = PROCESSED_DATA_DIR / 'train',
+    batch_size: int = 8
+):
+    """
+    Test the custom DataLoader and print batch shapes.
+    """
+    loader = get_dataloader(folder, batch_size=batch_size)
+    for X, y in loader:
+        print(f"Batch X: {X.shape}, Batch y: {y.shape}")
+        break
 
 if __name__ == "__main__":
     app()
