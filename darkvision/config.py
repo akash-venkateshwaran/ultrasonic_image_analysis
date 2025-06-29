@@ -21,6 +21,10 @@ MODELS_DIR = PROJ_ROOT / "models"
 REPORTS_DIR = PROJ_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 
+
+DRIVE_LINK = "https://drive.google.com/file/d/1YGLw_FE_N1r1WLzAEm8rF-2v3PCHRPvY/view?usp=sharing"
+FILE_ID = '1YGLw_FE_N1r1WLzAEm8rF-2v3PCHRPvY'
+
 # If tqdm is installed, configure loguru with tqdm.write
 # https://github.com/Delgan/loguru/issues/135
 try:

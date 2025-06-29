@@ -8,6 +8,8 @@ matplotlib
 mkdocs
 notebook
 numpy
+gdown
+py7zr
 pandas
 pip
 pytest
