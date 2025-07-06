@@ -58,7 +58,6 @@ create_environment:
 	
 
 
-
 #################################################################################
 # PROJECT RULES                                                                 #
 #################################################################################
@@ -87,3 +86,9 @@ export PRINT_HELP_PYSCRIPT
 
 help:
 	@$(PYTHON_INTERPRETER) -c "${PRINT_HELP_PYSCRIPT}" < $(MAKEFILE_LIST)
+
+update-branch:
+	git config --global user.name $(USER_NAME)
+	git config --global user.email $(USER_EMAIL)
+	git commit -am "Update with new results"
+	git push --force origin HEAD:update

@@ -1,0 +1,76 @@
+name: Model Evaluation
+
+on: 
+  push:
+    branches:
+      - main
+    paths:
+      - 'models/**.pt'
+  workflow_dispatch:
+
+jobs:
+  list-models:
+    runs-on: ubuntu-latest
+    outputs:
+      models: ${{ steps.list.outputs.files }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: List model files
+        id: list
+        run: |
+          files=$(find models -name "*.pt" -type f | jq -R -s -c 'split("\n")[:-1]')
+          echo "::set-output name=files::$files"
+
+  evaluate:
+    needs: list-models
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        model: ${{ fromJson(needs.list-models.outputs.models) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install torch torchvision
+          pip install -r requirements.txt
+
+      - name: Evaluate model
+        run: python evaluate.py --model_path ${{ matrix.model }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: evaluation-results-${{ matrix.model }}
+          path: reports/*.json
+
+  update-results:
+    needs: evaluate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: reports/
+
+      - name: Update Branch
+        env:
+          NAME: ${{ secrets.USER_NAME }}
+          EMAIL: ${{ secrets.USER_EMAIL }}
+        run: |
+          git config --global user.name "$NAME"
+          git config --global user.email "$EMAIL"
+          git checkout -b update
+          git add reports/
+          git commit -m "Update with new results"
+          git push --force origin update
