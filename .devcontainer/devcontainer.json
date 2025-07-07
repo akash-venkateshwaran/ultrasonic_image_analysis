@@ -1,7 +1,8 @@
 {
 	// For quick reference: https://containers.dev/implementors/json_reference/
 	"name": "Pytorch GPU",
-	"image": "nvcr.io/nvidia/pytorch:23.07-py3",
+	"image": "pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime",
+	// "image": "pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime",
 	//"build": {
 	//	"context": "..",
 	//	"dockerfile": "Dockerfile"
@@ -31,11 +32,6 @@
 			"userGid": "1000",
 			"upgradePackages": "true"
 		},
-		// Python with uv, Ruff, Mypy, MonkeyType and Bandit, installed using pipx
-		"ghcr.io/devcontainers/features/python:1": {
-			"installTools": "true",
-			"toolsToInstall": "uv,ruff,mypy,MonkeyType,bandit"
-		},
 		// git
 		"ghcr.io/devcontainers/features/git:1": {
 			"version": "os-provided",
@@ -48,7 +44,8 @@
 		"vscode": {
 			// Set *default* container specific settings.json values on container create.
 			"settings": {
-				"python.defaultInterpreterPath": "/usr/bin/python"
+				"python.defaultInterpreterPath": "/opt/conda/bin/python",
+				"python.terminal.activateEnvironment": true
 			},
 			// installs useful extensions
 			"extensions": [
@@ -67,18 +64,16 @@
 		}
 	},
 	// 6. Set `remoteUser` to `root` to connect as root instead. More info: https://aka.ms/vscode-remote/containers/non-root.
-	"remoteUser": "vscode",
+	"remoteUser": "root",
 	// the following commands are related to container lifecylce. More info: https://containers.dev/implementors/json_reference/#lifecycle-scripts
 	// 7. Use 'initializeCommand' to run commands ON THE HOST before container is created or started.
 	// "initializeCommand": "",
 	// 8. Use 'onCreateCommand' to run commands INSIDE THE CONTAINER after it started for the first time.
-	// for the nvida containers, sh points to sh-wrap. We want it to point to dash
-	// https://wiki.debian.org/Shell
-	"onCreateCommand": "sudo ln -sf /usr/bin/dash /usr/bin/sh",
+	// "onCreateCommand": "",
 	// 9. Use 'updateContentCommand' to run commands if the root filetree have any changes, during container creation.
 	// "updateContentCommand": "",
 	// 10. Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "pip3 install --user -r requirements.txt && pip3 install --user -e ."
+	"postCreateCommand": "echo 'export PATH=\"/opt/conda/bin:$PATH\"' >> ~/.bashrc && echo 'export PATH=\"/opt/conda/bin:$PATH\"' >> ~/.zshrc && /opt/conda/bin/python -m pip install -r requirements.txt && /opt/conda/bin/python -m pip install -e ."
 	// 11. Use 'postStartCommand' to run a command each time the container starts successfully.
 	// "postStartCommand": "",
 	// 12. Use 'postAttachCommand' to run a command each time a tool attaches to the container successfully. 

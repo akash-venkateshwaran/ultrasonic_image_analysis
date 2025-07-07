@@ -1,7 +1,13 @@
-# Extra packages:
 # ML/AI frameworks
 ray[all]==2.47.1
 scikit-image==0.25.2
+scikit-learn
+
+# Jupyter ecosystem
+ipykernel
+ipython
+jupyter-server
+jupyterlab
 
 # Development tools
 black==25.1.0
@@ -12,9 +18,12 @@ isort==6.0.1
 mkdocs==1.6.1
 
 # Utilities
-requests==2.32.4
 gdown==5.2.0
-python-dotenv==1.1.1
 loguru==0.7.3
-rich==14.0.0
+matplotlib
 py7zr
+python-dotenv==1.1.1
+pytest
+requests==2.32.4
+rich==14.0.0
+typer

@@ -45,7 +45,7 @@ def main(
 @app.command()
 def train(
     train_dir: Path = PROCESSED_DATA_DIR / "train",
-    test_dir: Path = PROCESSED_DATA_DIR / "test",
+    test_dir: Path = PROCESSED_DATA_DIR / "val",
     model_path: Path = MODELS_DIR / "cnn_flaw.pt",
     batch_size: int = 16,
     epochs: int = 100,  # Increased to 100
