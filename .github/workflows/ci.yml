@@ -43,13 +43,14 @@ jobs:
           pip install -r requirements.txt
 
       - name: Evaluate model
-        run: python evaluate.py --model_path ${{ matrix.model }}
+        run: |
+          python workflow_scripts/evaluate.py -m ${{ matrix.model }} -d data/processed/test_data.pt --log-level INFO
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: evaluation-results-${{ matrix.model }}
-          path: reports/*.json
+          name: evaluation-results-$(basename ${{ matrix.model }} .pt)
+          path: reports/*.txt
 
   update-results:
     needs: evaluate

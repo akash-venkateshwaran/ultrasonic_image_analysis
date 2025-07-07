@@ -11,8 +11,13 @@ import py7zr
 import random
 import torch
 from torch.utils.data import Dataset, DataLoader
+from typing import List, Tuple, Dict, Any
+import time
+import ray
+import click
 
-from darkvision.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, FILE_ID, RANDOM_STATE
+
+from darkvision.config import PROCESSED_DATA_DIR, RAW_DATA_DIR, FILE_ID, RANDOM_STATE, RAY_PORT
 
 app = typer.Typer()
 
@@ -315,52 +320,172 @@ def main(
             logger.info("Something happened for iteration 5.")
     logger.success("Processing dataset complete.")
 
+@ray.remote
+def process_bin_file(bin_file_path: str, raw_dir: str, max_samples_per_file: int) -> List[Tuple[np.ndarray, float]]:
+    """
+    Process a single bin file and return samples.
+    Each bin file has 100 slices.
+    """
+    bin_file = Path(bin_file_path)
+    base = bin_file.stem.replace('.bins', '')
+    proc = DataProcessorRaw(base, data_dir=Path(raw_dir))
+    
+    try:
+        arr = proc.load_bin()
+        data_dict = proc.load_all_data()
+        
+        samples = []
+        for i in range(min(arr.shape[0], 100, max_samples_per_file)):
+            samples.append((arr[i], data_dict[i]['equivalent_flawsize']))
+            
+        return samples
+    except Exception as e:
+        print(f"Error processing {bin_file_path}: {e}")
+        return []
+
 @app.command()
-def split_raw_to_train_test(
+@click.option('--test-size', default=0.2, help='Test set proportion')
+@click.option('--val-size', default=0.1, help='Validation set proportion')
+@click.option('--max-samples', default=10000, help='Maximum number of samples to process')
+@click.option('--num-cpus', default=None, type=int, help='Number of CPUs to use (default: all available)')
+@click.option('--num-gpus', default=0, type=int, help='Number of GPUs to use')
+@click.option('--seed', default=RANDOM_STATE, help='Random seed')
+def split_raw_data(
     test_size: float = 0.2,
-    max_samples: int = 1000,
+    val_size: float = 0.1,
+    max_samples: int = 10000,
+    num_cpus: int = None,
+    num_gpus: int = 0,
     seed: int = RANDOM_STATE
 ) -> None:
     """
-    Split raw data into train and test sets. Each bin file has 100 slices, each slice is a sample.
-    Export X_i (image) and y_i (flaw size) as .npy files in data/processed/train and data/processed/test.
+    Split raw data into train, validation, and test sets using Ray distributed processing.
+    Each bin file has 100 slices, each slice is a sample.
+    Export X_i (image) and y_i (flaw size) as .npy files in data/processed/train, val, and test.
     """
+    start_time = time.time()
+    
+    # Set random seeds
     np.random.seed(seed)
     random.seed(seed)
+    
+    # Setup directories
     raw_dir = RAW_DATA_DIR
     processed_dir = PROCESSED_DATA_DIR
     train_dir = processed_dir / 'train'
+    val_dir = processed_dir / 'val'
     test_dir = processed_dir / 'test'
-    train_dir.mkdir(parents=True, exist_ok=True)
-    test_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Create directories
+    for dir_path in [train_dir, val_dir, test_dir]:
+        dir_path.mkdir(parents=True, exist_ok=True)
 
-    # Gather all .bins files
-    bin_files = list(raw_dir.glob('*.bins'))
-    all_samples = []
-    for bin_file in bin_files:
-        base = bin_file.stem.replace('.bins', '')
-        proc = DataProcessorRaw(base, data_dir=raw_dir)
-        arr = proc.load_bin()
-        data_dict = proc.load_all_data()
-        for i in range(arr.shape[0]):
-            all_samples.append((arr[i], data_dict[i]['equivalent_flawsize']))
-            if len(all_samples) >= max_samples:
-                break
-        if len(all_samples) >= max_samples:
-            break
-    indices = np.arange(len(all_samples))
-    np.random.shuffle(indices)
-    split = int(len(indices) * (1 - test_size))
-    train_idx, test_idx = indices[:split], indices[split:]
-    # Save train
-    for idx, i in enumerate(train_idx):
-        np.save(train_dir / f'X_{idx}.npy', all_samples[i][0])
-        np.save(train_dir / f'y_{idx}.npy', np.array([all_samples[i][1]]))
-    # Save test
-    for idx, i in enumerate(test_idx):
-        np.save(test_dir / f'X_{idx}.npy', all_samples[i][0])
-        np.save(test_dir / f'y_{idx}.npy', np.array([all_samples[i][1]]))
-    logger.success(f"Exported {len(train_idx)} train and {len(test_idx)} test samples to {processed_dir}")
+    context = ray.init(
+        ignore_reinit_error=True,
+        include_dashboard=True,
+        dashboard_port=RAY_PORT,
+        num_cpus=num_cpus,
+        num_gpus=num_gpus if num_gpus > 0 else None
+    )
+    
+    # Get dashboard URL from context
+    dashboard_url = context.dashboard_url
+    logger.info(f"Ray Dashboard available at: http://localhost:{RAY_PORT}")
+
+    try:
+        # Gather all .bins files
+        bin_files = list(raw_dir.glob('*.bins'))
+        logger.info(f"Found {len(bin_files)} bin files to process")
+        
+        # Calculate max samples per file to stay under limit
+        max_samples_per_file = min(100, max_samples // len(bin_files) + 1) if bin_files else 100
+        
+        # Process bin files in parallel using Ray
+        logger.info("Starting distributed processing of bin files...")
+        
+        futures = []
+        for bin_file in bin_files:
+            future = process_bin_file.remote(
+                str(bin_file), 
+                str(raw_dir), 
+                max_samples_per_file
+            )
+            futures.append(future)
+        
+        # Collect results
+        all_samples = []
+        completed_files = 0
+        
+        for future in futures:
+            try:
+                samples = ray.get(future)
+                all_samples.extend(samples)
+                completed_files += 1
+                
+                if len(all_samples) >= max_samples:
+                    logger.info(f"Reached max samples limit ({max_samples}), stopping...")
+                    break
+                    
+                if completed_files % 10 == 0:
+                    logger.info(f"Processed {completed_files}/{len(bin_files)} files, {len(all_samples)} samples collected")
+                    
+            except Exception as e:
+                logger.error(f"Error processing file: {e}")
+                continue
+        
+        logger.info(f"Distributed processing completed")
+        
+        if len(all_samples) > max_samples:
+            all_samples = all_samples[:max_samples]
+        
+        
+        indices = np.arange(len(all_samples))
+        np.random.shuffle(indices)
+        
+        train_size = 1 - test_size - val_size
+        if train_size <= 0:
+            raise ValueError("train_size must be positive. Reduce test_size and/or val_size.")
+        
+        n_samples = len(indices)
+        n_train = int(n_samples * train_size)
+        n_val = int(n_samples * val_size)
+        n_test = n_samples - n_train - n_val
+        
+        # Split indices
+        train_idx = indices[:n_train]
+        val_idx = indices[n_train:n_train + n_val]
+        test_idx = indices[n_train + n_val:]
+        
+        logger.info(f"Split sizes - Train: {len(train_idx)}, Val: {len(val_idx)}, Test: {len(test_idx)}")
+        
+        def save_dataset(idx_list, save_dir, dataset_name):
+            """Helper function to save a dataset"""
+            for idx, i in enumerate(idx_list):
+                np.save(save_dir / f'X_{idx}.npy', all_samples[i][0])
+                np.save(save_dir / f'y_{idx}.npy', np.array([all_samples[i][1]]))
+            logger.info(f"Saved {len(idx_list)} {dataset_name} samples to {save_dir}")
+        
+        # Save train set
+        save_dataset(train_idx, train_dir, "train")
+        
+        # Save validation set
+        save_dataset(val_idx, val_dir, "validation")
+        
+        # Save test set
+        save_dataset(test_idx, test_dir, "test")
+        
+        logger.info(f"Data saving completed")
+        
+    finally:
+        # Shutdown Ray
+        ray.shutdown()
+        logger.info("Ray cluster shut down")
+    
+    # Log total processing time
+    total_time = time.time() - start_time
+    logger.success(f"✅ Dataset split completed in {total_time:.2f} seconds")
+    logger.success(f"📊 Final split: {len(train_idx)} train, {len(val_idx)} val, {len(test_idx)} test samples")
+    logger.success(f"💾 Data saved to {processed_dir}")
 
 class FlawDataset(Dataset):
     """

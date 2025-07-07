@@ -20,7 +20,7 @@ A project for automated flaw detection and regression using ultrasonic non-destr
    ```
 2. **Split raw data into train/test sets:**
    ```sh
-   python -m darkvision.dataset split-raw-to-train-test --test-size 0.2 --max-samples 1000 --seed 42
+   python -m darkvision.dataset split-raw-data --test-size 0.2 --val-size 0.1 --max-samples 10000 --num-cpus 8 --seed 42
    ```
 3. **Test the DataLoader:**
    ```sh
