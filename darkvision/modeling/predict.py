@@ -136,7 +136,11 @@ def predict_batch(
         
         with torch.no_grad():
             for X_batch, y_batch in dataloader:
+                
+                
                 X_batch = X_batch.to(device)
+                if X_batch.dim() == 3:
+                    X_batch = X_batch.unsqueeze(0) # Ensure 4D tensor incase batch size is None
                 y_batch = y_batch.to(device)
                 
                 # Make predictions

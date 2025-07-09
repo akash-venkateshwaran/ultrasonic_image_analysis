@@ -505,7 +505,7 @@ class FlawDataset(Dataset):
         return torch.from_numpy(X), torch.from_numpy(y)
 
 # Example CLI for DataLoader usage
-def get_dataloader(folder: Path, batch_size: int = 16, shuffle: bool = True):
+def get_dataloader(folder: Path, batch_size: int = None, shuffle: bool = True):
     ds = FlawDataset(folder)
     return DataLoader(ds, batch_size=batch_size, shuffle=shuffle, num_workers=0)
 

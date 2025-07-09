@@ -1,14 +1,15 @@
 name: Model Evaluation
 
-on: 
+on:
   push:
-    branches:
-      - main
-    paths:
-      - 'models/**.pt'
+    branches: [main]
+    paths: ['models/**.pt']
   workflow_dispatch:
 
 jobs:
+# ───────────────────────────────────────────────
+# 1.  Scan repo for new/changed *.pt files
+# ───────────────────────────────────────────────
   list-models:
     runs-on: ubuntu-latest
     outputs:
@@ -16,42 +17,68 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
       - name: List model files
         id: list
         run: |
-          files=$(find models -name "*.pt" -type f | jq -R -s -c 'split("\n")[:-1]')
+          files=$(find models -name '*.pt' -type f | jq -R -s -c 'split("\n")[:-1]')
           echo "::set-output name=files::$files"
 
+# ───────────────────────────────────────────────
+# 2.  Evaluate every model **inside the container**
+# ───────────────────────────────────────────────
   evaluate:
     needs: list-models
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest          # change to self-hosted if you need a real GPU
+    container:
+      image: nvcr.io/nvidia/pytorch:25.06-py3
+      options: >-
+        --gpus all
+        --ipc=host
+        --ulimit memlock=-1
+        --ulimit stack=67108864
+        --hostname ultrasonic-ci
     strategy:
+      fail-fast: false
       matrix:
         model: ${{ fromJson(needs.list-models.outputs.models) }}
+
     steps:
+      # ── 0.   Get repository inside the container ────────────
+      - name: Install git (image is minimal)
+        run: |
+          apt-get update -y && apt-get install -y git
+
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
+      # ── 1.   Python deps that are *not* in the NVIDIA image ─
+      - name: Install project requirements
         run: |
-          pip install torch torchvision
-          pip install -r requirements.txt
+          # torch / torchvision are already baked into the container
+          pip install --no-cache-dir -r requirements.txt
 
-      - name: Evaluate model
+      # ── 2.   Run evaluation script ──────────────────────────
+      - name: Evaluate ${{ matrix.model }}
+        env:
+          PYTHONWARNINGS: "ignore"          # silence SSL / CUDA warnings if wanted
         run: |
-          python workflow_scripts/evaluate.py -m ${{ matrix.model }} -d data/processed/test_data.pt --log-level INFO
+          echo "Evaluating: ${{ matrix.model }}"
+          python workflow_scripts/evaluate.py \
+                -m "${{ matrix.model }}" \
+                -d data/processed/test \
+                --log-level INFO
 
-      - name: Upload artifacts
+      # ── 3.   Persist the metrics / logs ─────────────────────
+      - name: Upload evaluation artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: evaluation-results-$(basename ${{ matrix.model }} .pt)
+          name: evaluation-results-${{ matrix.model }}
           path: reports/*.txt
 
+# ───────────────────────────────────────────────
+# 3.  Commit the freshly-generated reports
+# ───────────────────────────────────────────────
   update-results:
     needs: evaluate
     runs-on: ubuntu-latest
@@ -66,12 +93,12 @@ jobs:
 
       - name: Update Branch
         env:
-          NAME: ${{ secrets.USER_NAME }}
+          NAME:  ${{ secrets.USER_NAME }}
           EMAIL: ${{ secrets.USER_EMAIL }}
         run: |
-          git config --global user.name "$NAME"
+          git config --global user.name  "$NAME"
           git config --global user.email "$EMAIL"
-          git checkout -b update
+          git checkout -B update-results
           git add reports/
-          git commit -m "Update with new results"
-          git push --force origin update
+          git commit -m "ci: update evaluation results"
+          git push --force origin update-results

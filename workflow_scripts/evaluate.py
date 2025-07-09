@@ -13,8 +13,9 @@ from loguru import logger
 import sys
 
 # Import your prediction utilities
-from darkvision.modeling.predict import load_model, predict, predict_batch
-from darkvision.config import REPORTS_DIR
+from darkvision.modeling.predict import load_model, predict_batch
+from darkvision.dataset import get_dataloader
+from darkvision.config import REPORTS_DIR, PROCESSED_DATA_DIR
 
 
 def setup_logging(log_level: str = "INFO"):
@@ -66,11 +67,11 @@ RMSE: {np.sqrt(mse):.6f}
     help="Path to the trained model checkpoint (.pt file)"
 )
 @click.option(
-    "--test-data",
+    "--test-dir",
     "-d",
     type=click.Path(exists=True, path_type=Path),
-    required=True,
-    help="Path to test data (.pt file containing X_test and y_test tensors)"
+    default=PROCESSED_DATA_DIR / "test",
+    help=f"Path to test data directory (default: {PROCESSED_DATA_DIR / 'test'})"
 )
 @click.option(
     "--output-dir",
@@ -92,34 +93,34 @@ RMSE: {np.sqrt(mse):.6f}
     help="Logging level (default: INFO)"
 )
 @click.option(
-    "--batch-mode",
-    is_flag=True,
-    help="Use batch prediction mode (expects DataLoader instead of tensors)"
+    "--batch-size",
+    type=int,
+    default=None,
+    help="Batch size for evaluation (default: None)"
 )
 def evaluate_model(
     model_path: Path,
-    test_data: Path,
+    test_dir: Path,
     output_dir: Path,
     device: str,
     log_level: str,
-    batch_mode: bool
+    batch_size: int
 ):
-    """
-    Evaluate a trained model on test data and generate metrics report.
+        """
+        Evaluate a trained model on test data and generate metrics report.
+        
+        This script loads a trained model, makes predictions on test data,
+        calculates MSE and MAE metrics, and saves results to a text file.
+        """
+        # Setup logging
+        setup_logging(log_level)
+        
+        logger.info("Starting model evaluation")
+        logger.info(f"Model path: {model_path}")
+        logger.info(f"Test data directory: {test_dir}")
+        logger.info(f"Output directory: {output_dir}")
     
-    This script loads a trained model, makes predictions on test data,
-    calculates MSE and MAE metrics, and saves results to a text file.
-    """
-    # Setup logging
-    setup_logging(log_level)
-    
-    logger.info("Starting model evaluation")
-    logger.info(f"Model path: {model_path}")
-    logger.info(f"Test data path: {test_data}")
-    logger.info(f"Output directory: {output_dir}")
-    
-    try:
-        # Determine device
+
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
         
@@ -130,42 +131,29 @@ def evaluate_model(
         model = load_model(model_path, device)
         model_name = model_path.stem
         
-        # Load test data
-        logger.info("Loading test data...")
-        test_data_dict = torch.load(test_data, map_location=device)
+        # Get test dataloader
+        logger.info("Creating test dataloader...")
+        test_loader = get_dataloader(test_dir, batch_size=batch_size, shuffle=False)
         
-        if batch_mode:
-            # Assume test_data contains a DataLoader
-            if 'dataloader' not in test_data_dict:
-                raise ValueError("Batch mode requires 'dataloader' key in test data file")
-            
-            dataloader = test_data_dict['dataloader']
-            logger.info("Making batch predictions...")
-            predictions, ground_truth = predict_batch(dataloader, model, device)
-            
-        else:
-            # Assume test_data contains X_test and y_test tensors
-            if 'X_test' not in test_data_dict or 'y_test' not in test_data_dict:
-                raise ValueError("Test data file must contain 'X_test' and 'y_test' keys")
-            
-            X_test = test_data_dict['X_test']
-            y_test = test_data_dict['y_test']
-            
-            logger.info("Making predictions...")
-            predictions, ground_truth = predict(X_test, y_test, model, device)
+        # Make batch predictions
+        logger.info("Making batch predictions...")
+        predictions, ground_truth = predict_batch(test_loader, model, device)
         
         # Calculate metrics
+        logger.info("Calculating metrics...")
         mse = mean_squared_error(ground_truth, predictions)
         mae = mean_absolute_error(ground_truth, predictions)
         rmse = np.sqrt(mse)
         
+        # Log metrics
+        logger.info(f"Mean Squared Error (MSE): {mse:.6f}")
+        logger.info(f"Mean Absolute Error (MAE): {mae:.6f}")
+        logger.info(f"Root Mean Squared Error (RMSE): {rmse:.6f}")
+        
+        # Save results
         output_path = save_results(mse, mae, output_dir, model_name)
         
         logger.success("Model evaluation completed successfully!")
-        
-    except Exception as e:
-        logger.error(f"Evaluation failed: {str(e)}")
-        sys.exit(1)
 
 
 if __name__ == "__main__":

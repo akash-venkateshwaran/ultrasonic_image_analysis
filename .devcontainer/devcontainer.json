@@ -1,37 +1,32 @@
 {
 	// For quick reference: https://containers.dev/implementors/json_reference/
-	"name": "Pytorch GPU",
-	"image": "pytorch/pytorch:2.6.0-cuda12.6-cudnn9-runtime",
-	// "image": "pytorch/pytorch:2.7.1-cuda12.6-cudnn9-runtime",
-	//"build": {
-	//	"context": "..",
-	//	"dockerfile": "Dockerfile"
-	//},
+	"name": "NVIDIA PyTorch GPU",
+	"image": "nvcr.io/nvidia/pytorch:25.06-py3",
+	// Alternative recent versions if needed:
+	// "image": "nvcr.io/nvidia/pytorch:25.05-py3",
+	// "image": "nvcr.io/nvidia/pytorch:25.04-py3",
 	// 1. Use 'forwardPorts' to make a list of ports inside the container available locally.
 	"forwardPorts": [
-		8265
+		8265,
+		8888, // Common port for Jupyter notebooks
+		4000
 	],
 	// 2. Use 'mounts' to make a list of local directories available inside the container. More info: https://code.visualstudio.com/remote/advancedcontainers/add-local-file-mount
 	// "mounts": [],
 	// 3. Use 'runArgs' to pass arguments to the container. 
-	// run the container with all GPUs
+	// run the container with all GPUs and optimized settings for ML workloads
 	"runArgs": [
 		"--gpus",
-		"all"
+		"all",
+		"--ipc=host",
+		"--ulimit",
+		"memlock=-1",
+		"--ulimit",
+		"stack=67108864",
+		"--hostname=ultrasonic-dev"
 	],
 	// 4. Features to add to the Dev Container. More info: https://containers.dev/implementors/features.
 	"features": {
-		// ZSH without OMZ
-		"ghcr.io/devcontainers/features/common-utils:2": {
-			"installZsh": "true",
-			"configureZshAsDefaultShell": "true",
-			"installOhMyZsh": "false",
-			"installOhMyZshConfig": "false",
-			"username": "vscode",
-			"userUid": "1000",
-			"userGid": "1000",
-			"upgradePackages": "true"
-		},
 		// git
 		"ghcr.io/devcontainers/features/git:1": {
 			"version": "os-provided",
@@ -44,7 +39,7 @@
 		"vscode": {
 			// Set *default* container specific settings.json values on container create.
 			"settings": {
-				"python.defaultInterpreterPath": "/opt/conda/bin/python",
+				"python.defaultInterpreterPath": "/usr/bin/python3",
 				"python.terminal.activateEnvironment": true
 			},
 			// installs useful extensions
@@ -73,9 +68,14 @@
 	// 9. Use 'updateContentCommand' to run commands if the root filetree have any changes, during container creation.
 	// "updateContentCommand": "",
 	// 10. Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "echo 'export PATH=\"/opt/conda/bin:$PATH\"' >> ~/.bashrc && echo 'export PATH=\"/opt/conda/bin:$PATH\"' >> ~/.zshrc && /opt/conda/bin/python -m pip install -r requirements.txt && /opt/conda/bin/python -m pip install -e ."
+	"postCreateCommand": "python -m pip install -r requirements.txt && python -m pip install -e .",
 	// 11. Use 'postStartCommand' to run a command each time the container starts successfully.
 	// "postStartCommand": "",
 	// 12. Use 'postAttachCommand' to run a command each time a tool attaches to the container successfully. 
 	// "postAttachCommand": "",
+	// Environment variables
+	"containerEnv": {
+		"NVIDIA_VISIBLE_DEVICES": "all",
+		"NVIDIA_DRIVER_CAPABILITIES": "compute,utility"
+	}
 }

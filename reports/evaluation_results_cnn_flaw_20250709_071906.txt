@@ -1,0 +1,13 @@
+Model Evaluation Results
+========================
+Model: cnn_flaw
+Timestamp: 2025-07-09 07:19:06
+
+Metrics:
+--------
+Mean Squared Error (MSE): 0.079724
+Mean Absolute Error (MAE): 0.223754
+
+Additional Statistics:
+---------------------
+RMSE: 0.282354
